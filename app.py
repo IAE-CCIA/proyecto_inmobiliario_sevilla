@@ -458,12 +458,11 @@ elif pagina == "Análisis de Mercado":
     st.write("A diferencia de generar archivos de imagen intermediarios en el disco duro, esta integración utiliza un buffer de memoria mediante `grdevices`. Python inyecta los datos en R, R renderiza el gráfico con `ggplot2` directamente en la RAM, y Streamlit lo pinta al instante sin tocar el disco. Interoperabilidad pura al 100%.")
     
     try:
-        # --- PARCHE PARA WINDOWS ---
+        
         # Forzamos a Windows a encontrar los archivos .dll internos de R antes de arrancar rpy2
         ruta_r_bin = r'C:\Program Files\R\R-4.5.1\bin\x64'
         if os.path.exists(ruta_r_bin) and ruta_r_bin not in os.environ['PATH']:
             os.environ['PATH'] = ruta_r_bin + os.pathsep + os.environ['PATH']
-        # ---------------------------
 
         # 1. Preparamos la muestra de datos con Dask para el gráfico R
         total = len(df)
@@ -488,7 +487,7 @@ elif pagina == "Análisis de Mercado":
             print(p)
             """
             
-            # 5. MAGIA PURA: R dibuja directamente en un buffer de bytes de Python
+            # 5. R dibuja directamente en un buffer de bytes de Python
             with grdevices.render_to_bytesio(grdevices.png, width=800, height=500, res=100) as img:
                 robjects.r(codigo_r)
         
