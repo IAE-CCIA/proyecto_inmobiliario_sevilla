@@ -9,6 +9,11 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import os 
+import dask.dataframe as dd
+import rpy2.robjects as robjects
+from rpy2.robjects import pandas2ri 
+from rpy2.robjects.lib import grdevices 
+from rpy2.robjects.conversion import localconverter
 
 # 1. CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(
@@ -40,6 +45,12 @@ def es_extra_logico(tipo, columna):
     if tipo == 'Piso' and columna == 'garden': return False
     return True
 
+@st.cache_data
+def cargar_df_dask():
+    df_dask = dd.read_csv('data/processed/viviendas_sevilla_limpio.csv', assume_missing=True)
+    df_dask = df_dask.map_partitions(normalizar_house_type)
+    return df_dask
+
 # Arquitectura Base de PyTorch
 class BaseCNN(nn.Module):
     def __init__(self):
@@ -54,10 +65,10 @@ class BaseCNN(nn.Module):
 
 @st.cache_resource
 def cargar_recursos():
-    # Carga Clásica
+    # Carga Clásica - OPTIMIZADO CON DASK
     modelo_rf = joblib.load('models/modelo_casas_sevilla.pkl')
-    df_datos = pd.read_csv('data/processed/viviendas_sevilla_limpio.csv')
-    df_datos = normalizar_house_type(df_datos)
+    df_dask = cargar_df_dask()
+    df_datos = df_dask.compute()
     encoders = joblib.load('models/diccionario_encoders.pkl')
     
     # Carga Deep Learning
@@ -65,7 +76,7 @@ def cargar_recursos():
     scaler_y = joblib.load('models/scaler_y.pkl')
     modelo_pt = torch.load('models/modelo_pytorch.pth', weights_only=False)
     
-    return modelo_rf, modelo_pt, scaler_x, scaler_y, df_datos, encoders
+    return modelo_rf, modelo_pt, scaler_x, scaler_y, df_datos, df_dask, encoders
 
 @st.cache_data
 def calcular_importancia_pytorch(_modelo_pt, _scaler_x, _scaler_y, df_ref, columnas, _encoders):
@@ -144,7 +155,7 @@ class TasadorInteligente:
 
 # Cargamos los recursos necesarios (modelos, scalers, datos) y preparamos el tasador inteligente
 try:
-    modelo_rf, modelo_pt, scaler_x, scaler_y, df, encoders = cargar_recursos()
+    modelo_rf, modelo_pt, scaler_x, scaler_y, df, df_dask, encoders = cargar_recursos()
     tasador = TasadorInteligente(modelo_rf, modelo_pt, scaler_x, scaler_y, df)
 except Exception as e:
     st.error(f"Error cargando recursos: {e}")
@@ -176,13 +187,13 @@ if pagina == "Tasador Inteligente":
 
     with col_izq:
         st.subheader("Ubicación y Tipo de Inmueble")
-        lista_ciudades = sorted(df['loc_city'].unique())
+        lista_ciudades = sorted(df_dask['loc_city'].dropna().unique().compute())
         ciudad_sel = st.selectbox("Selecciona el Municipio", lista_ciudades)
 
-        distritos_filtrados = sorted(df[df['loc_city'] == ciudad_sel]['loc_district'].unique())
+        distritos_filtrados = sorted(df_dask[df_dask['loc_city'] == ciudad_sel]['loc_district'].dropna().unique().compute())
         distrito_sel = st.selectbox("Selecciona el Distrito o Zona", distritos_filtrados)
         
-        tipos_filtrados = sorted(df[(df['loc_city'] == ciudad_sel) & (df['loc_district'] == distrito_sel)]['house_type'].unique())
+        tipos_filtrados = sorted(df_dask[(df_dask['loc_city'] == ciudad_sel) & (df_dask['loc_district'] == distrito_sel)]['house_type'].dropna().unique().compute())
         tipo_sel = st.selectbox("Tipo de Propiedad", tipos_filtrados)
 
         st.markdown("---")
@@ -231,12 +242,13 @@ if pagina == "Tasador Inteligente":
             factor_estado = 1.0 if estado_sel == "Buen estado" else (0.85 if estado_sel == "A reformar" else 1.15)
 
             try:
-                datos_ciudad = df[df['loc_city'] == ciudad_sel]
+                datos_ciudad = df_dask[df_dask['loc_city'] == ciudad_sel][['renta_bruta_media', 'distancia_centro_sevilla_km']].head(1)
                 if not datos_ciudad.empty:
-                    renta = datos_ciudad['renta_bruta_media'].iloc[0]
-                    distancia = datos_ciudad['distancia_centro_sevilla_km'].iloc[0]
+                    renta = float(datos_ciudad['renta_bruta_media'].iloc[0])
+                    distancia = float(datos_ciudad['distancia_centro_sevilla_km'].iloc[0])
                 else:
-                    renta, distancia = df['renta_bruta_media'].mean(), df['distancia_centro_sevilla_km'].mean()
+                    renta = float(df_dask['renta_bruta_media'].mean().compute())
+                    distancia = float(df_dask['distancia_centro_sevilla_km'].mean().compute())
             except:
                 renta, distancia = 20000, 10 
 
@@ -324,19 +336,48 @@ elif pagina == "Análisis de Mercado":
     """)
     st.markdown("---")
 
-    # 1. Tabla Dinámica
+    # 1. Tabla Dinámica - OPTIMIZADO CON DASK
     st.subheader("Resumen por Municipio y Tipo de Vivienda")
     st.write("La siguiente tabla muestra el precio medio por metro cuadrado y el conteo total de viviendas en oferta según municipio y tipología. Permite identificar de un vistazo las zonas con mayor disponibilidad y las de precio más elevado.")
     
-    pivot_precio = pd.pivot_table(
-        df,
-        values='price_m2',
-        index='loc_city',
-        columns='house_type',
-        aggfunc=['mean', 'count'],
-        fill_value=0
-    )
+    pivot_precio = df_dask.groupby(['loc_city', 'house_type']).agg({
+        'price_m2': ['mean', 'count']
+    }).compute().unstack(fill_value=0)
+    
     st.dataframe(pivot_precio, use_container_width=True)
+
+    # Gráfico de precio por m² en Tomares y Mairena del Aljarafe
+    st.markdown("### Precio medio por m² según tipo de vivienda: Tomares vs Mairena del Aljarafe")
+    st.write("A continuación se presenta una comparativa específica de los municipios de Tomares y Mairena del Aljarafe. Este gráfico muestra cómo varía el precio medio por metro cuadrado según el tipo de vivienda en ambas posiciones clave del Aljarafe sevillano.")
+    ciudades_aljarafe = ['Tomares', 'Mairena del Aljarafe']
+    df_aljarafe = df_dask[df_dask['loc_city'].isin(ciudades_aljarafe)]
+    resumen_aljarafe = (
+        df_aljarafe.groupby(['loc_city', 'house_type'])['price_m2']
+                  .mean()
+                  .compute()
+                  .reset_index()
+                  .sort_values(['loc_city', 'price_m2'], ascending=[True, False])
+    )
+
+    if not resumen_aljarafe.empty:
+        fig_aljarafe, ax_aljarafe = plt.subplots(figsize=(10, 6))
+        sns.barplot(
+            data=resumen_aljarafe,
+            x='house_type',
+            y='price_m2',
+            hue='loc_city',
+            palette=['#1f77b4', '#ff7f0e'],
+            ax=ax_aljarafe
+        )
+        ax_aljarafe.set_title('Precio medio por m² según tipo de vivienda en Tomares y Mairena del Aljarafe', fontweight='bold')
+        ax_aljarafe.set_xlabel('Tipo de Vivienda')
+        ax_aljarafe.set_ylabel('Precio medio (€ / m²)')
+        ax_aljarafe.set_xticklabels(ax_aljarafe.get_xticklabels(), rotation=25, ha='right')
+        ax_aljarafe.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x):,} €'.replace(',', '.')))
+        plt.tight_layout()
+        st.pyplot(fig_aljarafe)
+    else:
+        st.warning('No hay datos suficientes para Tomares o Mairena del Aljarafe en el conjunto actual.')
 
     st.markdown("---")
     st.subheader("Visualización de Tendencias en 2021")
@@ -358,7 +399,7 @@ elif pagina == "Análisis de Mercado":
     axes[1].set_xlabel('Metros Cuadrados (m²)')
     axes[1].set_ylabel('Precio')
 
-    top_10_ciudades = df.groupby('loc_city')['price_m2'].mean().sort_values(ascending=False).head(10)
+    top_10_ciudades = df_dask.groupby('loc_city')['price_m2'].mean().compute().sort_values(ascending=False).head(10)
     sns.barplot(x=top_10_ciudades.index, y=top_10_ciudades.values, palette='magma', hue=top_10_ciudades.index, legend=False, ax=axes[2])
     axes[2].set_title('Precio Medio por m² (Top 10)', fontweight='bold')
     axes[2].set_ylabel('Precio € / m²')
@@ -411,13 +452,49 @@ elif pagina == "Análisis de Mercado":
     
     st.write("El modelo **Random Forest** ha demostrado ser superior para este conjunto de datos tabulares, logrando un menor margen de error (MAE) y explicando mejor la varianza del mercado (R² de 0.85). Por su parte, la red neuronal (**PyTorch CNN 1D** con *Fine-Tuning*), aunque ligeramente menos precisa (R² de 0.79), ofrece un enfoque de computación moderna muy potente extrayendo patrones ocultos. A nivel de explicabilidad, ambos modelos coinciden en su razonamiento: la **renta bruta media del municipio**, los **metros cuadrados** y la **distancia a Sevilla capital** son los tres pilares indiscutibles a la hora de tasar un inmueble en la provincia.")
 
-    # 4. Gráfico generado por R (Interoperabilidad)
+    # 4. INTEGRACIÓN NATIVA CON R EN MEMORIA (Requisito 10)
     st.markdown("---")
-    st.subheader("Análisis Avanzado de Correlación (Python-R)")
-    st.write("Finalmente, aprovechamos la interoperabilidad de nuestro ecosistema para ejecutar un script de R (`ggplot2`) desde Python. El resultado confirma visualmente lo que nuestra Inteligencia Artificial aprendió de forma matemática: existe una fuerte relación entre el nivel de renta de un municipio y el valor de venta de los inmuebles en el mismo.")
+    st.subheader("Análisis de Correlación Nativo (Python + R en memoria RAM)")
+    st.write("A diferencia de generar archivos de imagen intermediarios en el disco duro, esta integración utiliza un buffer de memoria mediante `grdevices`. Python inyecta los datos en R, R renderiza el gráfico con `ggplot2` directamente en la RAM, y Streamlit lo pinta al instante sin tocar el disco. Interoperabilidad pura al 100%.")
     
-    ruta_grafico_r = "notebooks/grafico_renta_precio.png"
-    if os.path.exists(ruta_grafico_r):
-        st.image(ruta_grafico_r, use_container_width=True)
-    else:
-        st.warning("No se ha encontrado el gráfico generado por R.")
+    try:
+        # --- PARCHE PARA WINDOWS ---
+        # Forzamos a Windows a encontrar los archivos .dll internos de R antes de arrancar rpy2
+        ruta_r_bin = r'C:\Program Files\R\R-4.5.1\bin\x64'
+        if os.path.exists(ruta_r_bin) and ruta_r_bin not in os.environ['PATH']:
+            os.environ['PATH'] = ruta_r_bin + os.pathsep + os.environ['PATH']
+        # ---------------------------
+
+        # 1. Preparamos la muestra de datos con Dask para el gráfico R
+        total = len(df)
+        frac = min(3000 / total, 1.0)
+        df_r = df_dask[['renta_bruta_media', 'price']].dropna().sample(frac=frac, random_state=42).compute()
+        
+        # 2. CONVERSIÓN MODERNA: Abrimos el puente de memoria temporalmente
+        with localconverter(robjects.default_converter + pandas2ri.converter):
+            
+            # 3. Inyectamos el DataFrame directo a R
+            robjects.globalenv['datos_viviendas'] = df_r
+            
+            # 4. Código R puro 
+            codigo_r = """
+            library(ggplot2)
+            library(stats)
+            p <- ggplot(datos_viviendas, aes(x=renta_bruta_media, y=price)) +
+                 geom_point(alpha=0.4, color="#2c3e50") +
+                 geom_smooth(method="lm", color="#e74c3c", se=TRUE) +
+                 theme_minimal(base_size=14) +
+                 labs(title="Renta vs Precio (Generado NATIVAMENTE en RAM)")
+            print(p)
+            """
+            
+            # 5. MAGIA PURA: R dibuja directamente en un buffer de bytes de Python
+            with grdevices.render_to_bytesio(grdevices.png, width=800, height=500, res=100) as img:
+                robjects.r(codigo_r)
+        
+        # 6. Streamlit pinta los bytes directamente desde la memoria RAM
+        st.image(img.getvalue(), use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Aviso del sistema: No se pudo ejecutar el motor de R en memoria. Esto es normal si el entorno no tiene R instalado en la ruta C:/Program Files/R/R-4.5.1.")
+        st.code(str(e))
