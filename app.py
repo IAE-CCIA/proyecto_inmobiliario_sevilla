@@ -447,8 +447,8 @@ elif pagina == "Análisis de Mercado":
     
     st.markdown("##### Comparativa de Rendimiento (Evaluación en el Test Set)")
     col_m1, col_m2 = st.columns(2)
-    col_m1.metric("Random Forest", "R²: 0.8526", "MAE: 28.218 €", delta_color="off")
-    col_m2.metric("PyTorch CNN 1D", "R²: 0.7959", "MAE: 32.799 €", delta_color="off")
+    col_m1.metric("Random Forest", "R²: 0.8587", "MAE: 27,613.95 €", delta_color="off")
+    col_m2.metric("PyTorch CNN 1D", "R²: 0.7858", "MAE: 34,334.62 €", delta_color="off")
     
     st.write("El modelo **Random Forest** ha demostrado ser superior para este conjunto de datos tabulares, logrando un menor margen de error (MAE) y explicando mejor la varianza del mercado (R² de 0.85). Por su parte, la red neuronal (**PyTorch CNN 1D** con *Fine-Tuning*), aunque ligeramente menos precisa (R² de 0.79), ofrece un enfoque de computación moderna muy potente extrayendo patrones ocultos. A nivel de explicabilidad, ambos modelos coinciden en su razonamiento: la **renta bruta media del municipio**, los **metros cuadrados** y la **distancia a Sevilla capital** son los tres pilares indiscutibles a la hora de tasar un inmueble en la provincia.")
 
