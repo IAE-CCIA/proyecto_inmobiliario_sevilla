@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+src/tasador_pipeline.py
+src/proyecto_inmobiliario_sevilla.egg-info/PKG-INFO
+src/proyecto_inmobiliario_sevilla.egg-info/SOURCES.txt
+src/proyecto_inmobiliario_sevilla.egg-info/dependency_links.txt
+src/proyecto_inmobiliario_sevilla.egg-info/requires.txt
+src/proyecto_inmobiliario_sevilla.egg-info/top_level.txt

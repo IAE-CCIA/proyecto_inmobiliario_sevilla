@@ -2798,13 +2798,15 @@ wheels = [
 [[package]]
 name = "proyecto-inmobiliario-sevilla"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
+    { name = "dask" },
     { name = "joblib" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "plotly" },
+    { name = "rpy2" },
     { name = "scikit-learn" },
     { name = "seaborn" },
     { name = "streamlit" },
@@ -2815,17 +2817,15 @@ dependencies = [
 dev = [
     { name = "dagster" },
     { name = "dagster-webserver" },
-    { name = "dask" },
     { name = "distributed" },
     { name = "jupyter" },
-    { name = "rpy2" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "dagster", marker = "extra == 'dev'" },
     { name = "dagster-webserver", marker = "extra == 'dev'" },
-    { name = "dask", marker = "extra == 'dev'" },
+    { name = "dask" },
     { name = "distributed", marker = "extra == 'dev'" },
     { name = "joblib" },
     { name = "jupyter", marker = "extra == 'dev'" },
@@ -2833,7 +2833,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "plotly" },
-    { name = "rpy2", marker = "extra == 'dev'" },
+    { name = "rpy2" },
     { name = "scikit-learn" },
     { name = "seaborn" },
     { name = "streamlit" },

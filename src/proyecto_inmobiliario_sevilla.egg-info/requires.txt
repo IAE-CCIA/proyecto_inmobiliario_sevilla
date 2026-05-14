@@ -1,0 +1,17 @@
+streamlit
+pandas
+numpy
+scikit-learn
+joblib
+plotly
+matplotlib
+seaborn
+torch
+dask
+rpy2
+
+[dev]
+distributed
+dagster
+dagster-webserver
+jupyter
