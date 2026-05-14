@@ -18,7 +18,7 @@ dependencies = [
     "matplotlib",
     "seaborn",
     "torch",
-    "dask",
+    "dask[dataframe]",
     "rpy2",
 ]
 
