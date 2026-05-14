@@ -7,5 +7,5 @@ plotly>=5.0.0
 torch>=2.0.0
 matplotlib>=3.5.0
 seaborn>=0.13.0
-dask
+dask[dataframe]
 rpy2
